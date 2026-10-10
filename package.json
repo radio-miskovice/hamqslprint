@@ -19,6 +19,8 @@
     "build": "vite build && tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pretest:log": "npm run build",
+    "test:log": "node scripts/select-fields.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

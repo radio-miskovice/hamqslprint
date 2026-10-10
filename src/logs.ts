@@ -77,21 +77,35 @@ function parseCabrillo(text: string): LogRecord[] {
     const line = rawLine.trim();
     if (!/^QSO\s*:/i.test(line)) continue;
     const tokens = line.replace(/^QSO\s*:\s*/i, "").trim().split(/\s+/);
-    if (tokens.length < 9) {
+    if (tokens.length < 8) {
       throw new Error(`Malformed Cabrillo QSO record on line ${lineIndex + 1}.`);
     }
-
+    const workedCallIndex = tokens.findIndex(
+      (token, index) => index > 4 && isCallsign(token)
+    );
+    if (workedCallIndex < 0 || workedCallIndex + 1 >= tokens.length) {
+      throw new Error(`Unable to locate contacted station in Cabrillo QSO on line ${lineIndex + 1}.`);
+    }
+    const sentExchange = tokens.slice(5, workedCallIndex);
+    const receivedExchange = tokens.slice(workedCallIndex + 2);
     const record: LogRecord = {
       FREQ: normalizeFrequency(tokens[0]),
       MODE: cabrilloMode(tokens[1]),
       QSO_DATE: normalizeDate(tokens[2]),
       TIME_ON: normalizeTime(tokens[3]),
-      CALL: tokens[7],
-      RST_SENT: tokens[5],
-      STX_STRING: tokens[6],
-      RST_RCVD: tokens[8]
+      STATION_CALLSIGN: tokens[4],
+      CALL: tokens[workedCallIndex],
+      RST_RCVD: tokens[workedCallIndex + 1]
     };
-    if (tokens.length > 9) record.SRX_STRING = tokens.slice(9).join(" ");
+    if (sentExchange.length > 0) {
+      if (sentExchange.length > 1 && /^\d{2,3}$/.test(sentExchange[0])) {
+        record.RST_SENT = sentExchange[0];
+        record.STX_STRING = sentExchange.slice(1).join(" ");
+      } else {
+        record.STX_STRING = sentExchange.join(" ");
+      }
+    }
+    if (receivedExchange.length > 0) record.SRX_STRING = receivedExchange.join(" ");
     records.push(record);
   }
   return records;
@@ -99,6 +113,8 @@ function parseCabrillo(text: string): LogRecord[] {
 
 function parseEdi(text: string): LogRecord[] {
   const records: LogRecord[] = [];
+  const band = /^\s*PBand=(.+?)\s*$/im.exec(text)?.[1];
+  const frequency = band ? /^(\d+(?:\.\d+)?)\s*MHz$/i.exec(band)?.[1] : undefined;
   let readingQsos = false;
   for (const [lineIndex, rawLine] of text.split(/\r?\n/).entries()) {
     const line = rawLine.trim();
@@ -110,7 +126,7 @@ function parseEdi(text: string): LogRecord[] {
     if (!readingQsos || !line || line.startsWith("#")) continue;
 
     const columns = line.split(";").map((value) => value.trim());
-    if (columns.length < 9) {
+    if (columns.length < 10) {
       throw new Error(`Malformed EDI QSO record on line ${lineIndex + 1}.`);
     }
     const record: LogRecord = {
@@ -121,10 +137,10 @@ function parseEdi(text: string): LogRecord[] {
       STX_STRING: columns[5],
       RST_RCVD: columns[6],
       SRX_STRING: columns[7],
-      GRIDSQUARE: columns[8]
+      GRIDSQUARE: columns[9]
     };
-    if (columns[3]) record.MODE = cabrilloMode(columns[3]);
-    if (columns[9]) record.FREQ = columns[9];
+    if (columns[3]) record.MODE = ediMode(columns[3]);
+    if (frequency) record.FREQ = frequency;
     records.push(record);
   }
   return records;
@@ -161,6 +177,23 @@ function cabrilloMode(value: string): string {
     default:
       return value.toUpperCase();
   }
+}
+
+function ediMode(value: string): string {
+  switch (value.toUpperCase()) {
+    case "1":
+      return "SSB";
+    case "2":
+      return "CW";
+    case "3":
+      return "FM";
+    default:
+      return value.toUpperCase();
+  }
+}
+
+function isCallsign(value: string): boolean {
+  return /^(?=.*\d)[A-Z0-9]*\d[A-Z]+[A-Z0-9]*(?:\/[A-Z0-9]+)*$/i.test(value);
 }
 
 function normalizeFrequency(value: string): string {

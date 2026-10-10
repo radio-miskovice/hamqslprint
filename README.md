@@ -89,3 +89,22 @@ npm test
 npm run typecheck
 npm run build
 ```
+
+### Testing a real log file
+
+From the project directory, run:
+
+```powershell
+npm run test:log -- "C:\Users\jvavruska\Documents\_HAM\02_logs\2015-CQWWSSB-OK1KEO.adi"
+```
+
+This rebuilds the library, reads the supplied file, detects its format, and
+prints the sorted field list as JSON. Relative paths are resolved from the
+current working directory. Missing arguments, unreadable files, and parsing
+errors are reported to stderr with a nonzero exit code.
+
+Parser tests include real Cabrillo and IARU R1 EDI QSO excerpts from
+[df7cb/df7cb-log](https://github.com/df7cb/df7cb-log). `selectFields` was also
+run against a public 253-record ADIF export from
+[qso-mapper](https://github.com/stephenhouser/qso-mapper), returning 55
+distinct fields.

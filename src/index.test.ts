@@ -63,6 +63,7 @@ describe("log parsing", () => {
         MODE: "CW",
         QSO_DATE: "20261010",
         TIME_ON: "1234",
+        STATION_CALLSIGN: "DL0ME",
         CALL: "DL1AA",
         RST_SENT: "599",
         STX_STRING: "001",
@@ -72,21 +73,66 @@ describe("log parsing", () => {
     ]);
   });
 
+  it("selects fields from a real Cabrillo STEW-PERRY contest log", () => {
+    // QSO excerpt from https://github.com/df7cb/df7cb-log/blob/0d791bac78544020a464e2918700e60ff95dd012/tlf/2021-06-19.cbr
+    const actualLog = [
+      "START-OF-LOG: 3.0",
+      "CONTEST: STEW-PERRY",
+      "QSO: 1821 CW 2021-06-19 2033 DF7CB JO31 DH1NBE 599 JN59 0",
+      "END-OF-LOG:"
+    ].join("\n");
+
+    expect(selectFields(actualLog)).toEqual([
+      "CALL",
+      "FREQ",
+      "MODE",
+      "QSO_DATE",
+      "RST_RCVD",
+      "SRX_STRING",
+      "STATION_CALLSIGN",
+      "STX_STRING",
+      "TIME_ON"
+    ]);
+    expect(parseLog(actualLog).records[0]).toMatchObject({
+      STATION_CALLSIGN: "DF7CB",
+      CALL: "DH1NBE",
+      STX_STRING: "JO31",
+      RST_RCVD: "599",
+      SRX_STRING: "JN59 0"
+    });
+  });
+
   it("reads IARU R1 EDI QSO records", () => {
+    // QSO excerpt from https://github.com/df7cb/df7cb-log/blob/0d791bac78544020a464e2918700e60ff95dd012/tlf/2022-07-03-darc_vhf.edi
     const edi = [
       "[REG1TEST;1]",
       "TName=Test",
+      "PBand=144 MHz",
       "[QSORecords;1]",
-      "20261010;1234;DL1AA;CW;599;001;599;002;JO31AA;144.174"
+      "220703;0959;DL7ATR;1;59;001;59;102;;JO30DO;91;;N;N;"
     ].join("\n");
     const parsed = parseLog(edi);
     expect(parsed.format).toBe("edi");
     expect(parsed.records[0]).toMatchObject({
-      CALL: "DL1AA",
-      QSO_DATE: "20261010",
-      TIME_ON: "1234",
-      GRIDSQUARE: "JO31AA"
+      CALL: "DL7ATR",
+      MODE: "SSB",
+      QSO_DATE: "20220703",
+      TIME_ON: "0959",
+      GRIDSQUARE: "JO30DO",
+      FREQ: "144"
     });
+    expect(selectFields(edi)).toEqual([
+      "CALL",
+      "FREQ",
+      "GRIDSQUARE",
+      "MODE",
+      "QSO_DATE",
+      "RST_RCVD",
+      "RST_SENT",
+      "SRX_STRING",
+      "STX_STRING",
+      "TIME_ON"
+    ]);
   });
 
   it("allows callers to supply a format when detection is ambiguous", () => {

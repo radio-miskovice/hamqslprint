@@ -53,3 +53,9 @@ selected font cannot render some characters (default data encoding is UTF-8)
 ## 5. OTHER
 
 The module can be used in a standalone app as well as in web app.
+
+### 5.1 Sample logs
+
+Sample log files can be found in
+
+- C:\Users\jvavruska\Documents\_HAM\02_logs and its subdirectories
