@@ -1,0 +1,149 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: hamqslprint label template
+description: >-
+  Label template structure. Dimensions and coordinates are in millimetres;
+  font sizes are in PDF points. Use checkTemplate to additionally validate
+  grid fit, safety margins, text fit, and font character coverage.
+type: object
+required: [labels, fields]
+not:
+  required: [paper, labels]
+  properties:
+    paper:
+      required: [margin]
+    labels:
+      required: [margin]
+properties:
+  paper:
+    type: object
+    description: Defaults to A4 portrait when omitted.
+    properties:
+      size:
+        type: string
+        enum: [A3, A4, A5, Letter, Legal, custom]
+        default: A4
+      orientation:
+        type: string
+        enum: [portrait, landscape]
+        default: portrait
+        description: Landscape swaps the paper width and height.
+      width:
+        $ref: "#/$defs/positiveDimension"
+        description: Custom paper width before applying orientation.
+      height:
+        $ref: "#/$defs/positiveDimension"
+        description: Custom paper height before applying orientation.
+      margin:
+        $ref: "#/$defs/insets"
+        description: >-
+          Physical paper margins outside the sticker grid, measured on the
+          oriented page. Omitted sides default to zero.
+    if:
+      required: [size]
+      properties:
+        size:
+          const: custom
+    then:
+      required: [width, height]
+  labels:
+    type: object
+    required: [width, height, columns, rows]
+    properties:
+      width:
+        $ref: "#/$defs/positiveDimension"
+        description: Width of one sticker.
+      height:
+        $ref: "#/$defs/positiveDimension"
+        description: Height of one sticker.
+      columns:
+        type: integer
+        minimum: 1
+      rows:
+        type: integer
+        minimum: 1
+      gapX:
+        $ref: "#/$defs/nonNegativeDimension"
+        description: Horizontal gap between stickers.
+      gapY:
+        $ref: "#/$defs/nonNegativeDimension"
+        description: Vertical gap between stickers.
+      margin:
+        $ref: "#/$defs/insets"
+        deprecated: true
+        description: Legacy alias for paper.margin. Do not supply both.
+      safety:
+        $ref: "#/$defs/insets"
+        description: Non-printable inset on each sticker.
+  fields:
+    type: array
+    minItems: 1
+    description: Field boxes and constant text printed on every contact sticker.
+    items:
+      $ref: "#/$defs/item"
+$defs:
+  positiveDimension:
+    type: number
+    exclusiveMinimum: 0
+  nonNegativeDimension:
+    type: number
+    minimum: 0
+    default: 0
+  insets:
+    type: object
+    default: {}
+    description: Each omitted side defaults to zero millimetres.
+    properties:
+      top:
+        $ref: "#/$defs/nonNegativeDimension"
+      right:
+        $ref: "#/$defs/nonNegativeDimension"
+      bottom:
+        $ref: "#/$defs/nonNegativeDimension"
+      left:
+        $ref: "#/$defs/nonNegativeDimension"
+  item:
+    type: object
+    required: [x, y, width, height, fontSize]
+    oneOf:
+      - required: [field]
+        not:
+          required: [text]
+      - required: [text]
+        not:
+          required: [field]
+    properties:
+      field:
+        type: string
+        pattern: '\S'
+        description: >-
+          ADIF field name. Names are trimmed and uppercased by the parser.
+          Missing contact values render as empty text.
+        examples: [CALL, STATION_CALLSIGN, MY_GRIDSQUARE, BAND, QSO_DATE]
+      text:
+        type: string
+        description: Literal constant text; no placeholder substitution.
+      x:
+        $ref: "#/$defs/nonNegativeDimension"
+        description: Left edge of the box relative to the sticker's left edge.
+      y:
+        $ref: "#/$defs/nonNegativeDimension"
+        description: Top edge of the box relative to the sticker's top edge.
+      width:
+        $ref: "#/$defs/positiveDimension"
+      height:
+        $ref: "#/$defs/positiveDimension"
+      fontSize:
+        type: number
+        exclusiveMinimum: 0
+        description: Font size in PDF points.
+      font:
+        type: string
+        default: Helvetica
+        description: >-
+          Standard PDF font name (case-insensitive), or a custom font name
+          matching a key in the API options.fonts map.
+        examples: [Helvetica, Helvetica-Bold, Times-Roman, Courier]
+      align:
+        type: string
+        enum: [left, center, right]
+        default: left

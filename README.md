@@ -31,6 +31,11 @@ Without custom font data, use one of the PDF standard fonts: `Helvetica`,
 
 ### YAML template
 
+The [template schema](schema/template.yaml) is JSON Schema (Draft 2020-12)
+encoded as YAML. It describes the template structure and defaults; geometric
+and content-dependent checks still require `checkTemplate`. Schema defaults
+are documentation annotations, not automatic value insertion.
+
 All measurements are in millimetres; font sizes are in PDF points. Label field
 coordinates are measured from the label's top-left corner. The paper defaults
 to A4 portrait, and unspecified gaps and margins default to zero.
@@ -39,6 +44,7 @@ to A4 portrait, and unspecified gaps and margins default to zero.
 paper:
   size: A4 # A3, A4, A5, Letter, Legal, or custom
   orientation: portrait # portrait or landscape
+  margin: { top: 10, right: 5, bottom: 5, left: 5 }
   # For custom paper, use size: custom and provide width and height.
 labels:
   width: 65
@@ -47,7 +53,6 @@ labels:
   rows: 8
   gapX: 0
   gapY: 0
-  margin: { top: 10, right: 5, bottom: 5, left: 5 }
   safety: { top: 2, right: 2, bottom: 2, left: 2 }
 fields:
   - field: CALL # ADIF field name; one label is produced per log record
@@ -65,6 +70,47 @@ fields:
     height: 5
     fontSize: 9
 ```
+
+`paper.margin` describes the physical area outside the sticker grid on each
+side of the oriented page. Each omitted side defaults to zero, so marginless
+paper needs no margin object. Margins affect grid placement and available
+paper space. `labels.margin` remains supported as a deprecated alias; supplying
+both is an error. Sticker printable-area insets remain in `labels.safety`.
+
+### Creating a centered layout
+
+Use `createTemplateLayout(paper, labelSize, layout)` to calculate symmetric
+paper margins and return a partial template object. All dimensions are in
+millimetres; columns run across the page and rows run down it.
+
+```ts
+import { createTemplateLayout } from "hamqslprint";
+
+const partial = createTemplateLayout(
+  "A4",
+  { width: 70, height: 36 },
+  { columns: 3, rows: 8 }
+);
+// partial.paper.margin: { top: 4.5, bottom: 4.5, left: 0, right: 0 }
+const template = {
+  ...partial,
+  fields: [
+    { field: "CALL", x: 2, y: 2, width: 50, height: 7, fontSize: 14 }
+  ]
+};
+```
+
+The paper argument accepts a named size or a settings object such as
+`{ size: "A4", orientation: "landscape" }` or
+`{ size: "custom", width: 210, height: 297 }`. Orientation defaults to portrait;
+custom width and height are measured before orientation is applied.
+The layout accepts optional `gapX` and `gapY`, which are included in the margin
+calculation. Invalid dimensions and grids that do not fit throw `TemplateError`.
+The helper does not infer row/column counts, rotate labels, or add `fields`.
+The host can add fields and sticker safety margins, then serialize the object
+as YAML or pass it directly to the template APIs.
+
+### Template content validation
 
 Field box positions and dimensions must stay within the label's safety margins.
 The checker verifies every contact value fits both its box and selected font's

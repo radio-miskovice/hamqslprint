@@ -23,6 +23,7 @@ export interface PaperTemplate {
   orientation?: "portrait" | "landscape";
   width?: number;
   height?: number;
+  margin?: Partial<Insets>;
 }
 
 export interface LabelLayout {
@@ -32,6 +33,7 @@ export interface LabelLayout {
   rows: number;
   gapX?: number;
   gapY?: number;
+  /** @deprecated Use paper.margin instead. */
   margin?: Partial<Insets>;
   safety?: Partial<Insets>;
 }
@@ -52,6 +54,19 @@ export interface LabelTemplate {
   paper?: PaperTemplate;
   labels: LabelLayout;
   fields: TemplateItem[];
+}
+
+export type PaperSettings = Omit<PaperTemplate, "margin">;
+export type LabelSize = Pick<LabelLayout, "width" | "height">;
+export type GridLayout = Pick<LabelLayout, "columns" | "rows" | "gapX" | "gapY">;
+
+export interface TemplateLayout {
+  paper: PaperSettings & {
+    size: NonNullable<PaperTemplate["size"]>;
+    orientation: NonNullable<PaperTemplate["orientation"]>;
+    margin: Insets;
+  };
+  labels: LabelSize & GridLayout;
 }
 
 export interface FontOptions {

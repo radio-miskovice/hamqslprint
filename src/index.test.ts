@@ -22,12 +22,12 @@ const template = `
 paper:
   size: A4
   orientation: portrait
+  margin: { top: 10, left: 0, right: 0, bottom: 5 }
 labels:
   width: 70
   height: 35
   columns: 3
   rows: 8
-  margin: { top: 10, left: 0, right: 0, bottom: 5 }
   safety: { top: 2, left: 2, right: 2, bottom: 2 }
 fields:
   - field: CALL

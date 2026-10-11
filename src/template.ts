@@ -1,7 +1,12 @@
 import { parse as parseYaml, YAMLParseError } from "yaml";
 import type {
   Insets,
+  GridLayout,
+  LabelSize,
   LabelTemplate,
+  PaperSettings,
+  PaperTemplate,
+  TemplateLayout,
   TemplateInput,
   TemplateItem
 } from "./types";
@@ -47,24 +52,12 @@ export function parseTemplate(input: TemplateInput): LabelTemplate {
 
 export function normalizeTemplate(template: LabelTemplate): NormalizedTemplate {
   const paper = template.paper ?? {};
-  const size = paper.size ?? "A4";
-  const paperSizes: Record<Exclude<typeof size, "custom">, [number, number]> = {
-    A3: [297, 420],
-    A4: [210, 297],
-    A5: [148, 210],
-    Letter: [215.9, 279.4],
-    Legal: [215.9, 355.6]
-  };
-  let [paperWidth, paperHeight] =
-    size === "custom" ? [paper.width, paper.height] : paperSizes[size];
-  if (paperWidth === undefined || paperHeight === undefined) {
-    throw new TemplateError("Custom paper requires width and height in millimetres.");
-  }
-  if ((paper.orientation ?? "portrait") === "landscape") {
-    [paperWidth, paperHeight] = [paperHeight, paperWidth];
-  }
+  const [paperWidth, paperHeight] = paperDimensions(paper);
   const layout = template.labels;
-  const margin = { ...zeroInsets, ...layout.margin };
+  if (paper.margin !== undefined && layout.margin !== undefined) {
+    throw new TemplateError("Specify paper.margin or legacy labels.margin, not both.");
+  }
+  const margin = { ...zeroInsets, ...(paper.margin ?? layout.margin) };
   const safety = { ...zeroInsets, ...layout.safety };
   const gapX = layout.gapX ?? 0;
   const gapY = layout.gapY ?? 0;
@@ -113,11 +106,72 @@ export function normalizeTemplate(template: LabelTemplate): NormalizedTemplate {
   };
 }
 
+export function createTemplateLayout(
+  paperInput: NonNullable<PaperTemplate["size"]> | PaperSettings,
+  label: LabelSize,
+  grid: GridLayout
+): TemplateLayout {
+  const paper = typeof paperInput === "string" ? { size: paperInput } : paperInput;
+  const [paperWidth, paperHeight] = paperDimensions(paper);
+  const width = positive(label.width, "labels.width");
+  const height = positive(label.height, "labels.height");
+  const columns = positiveInteger(grid.columns, "labels.columns");
+  const rows = positiveInteger(grid.rows, "labels.rows");
+  const gapX = optionalNonNegative(grid.gapX, "labels.gapX") ?? 0;
+  const gapY = optionalNonNegative(grid.gapY, "labels.gapY") ?? 0;
+  const remainingWidth = paperWidth - columns * width - (columns - 1) * gapX;
+  const remainingHeight = paperHeight - rows * height - (rows - 1) * gapY;
+  if (remainingWidth < -1e-6 || remainingHeight < -1e-6) {
+    throw new TemplateError("Label grid exceeds the paper dimensions.");
+  }
+  const horizontal = Math.max(0, remainingWidth) / 2;
+  const vertical = Math.max(0, remainingHeight) / 2;
+  return {
+    paper: {
+      size: paper.size ?? "A4",
+      orientation: paper.orientation ?? "portrait",
+      ...(paper.size === "custom" ? { width: paper.width, height: paper.height } : {}),
+      margin: { top: vertical, bottom: vertical, left: horizontal, right: horizontal }
+    },
+    labels: {
+      width, height, columns, rows,
+      ...(grid.gapX === undefined ? {} : { gapX }),
+      ...(grid.gapY === undefined ? {} : { gapY })
+    }
+  };
+}
+
+function paperDimensions(paper: PaperSettings): [number, number] {
+  const size = paper.size ?? "A4";
+  const paperSizes: Record<Exclude<typeof size, "custom">, [number, number]> = {
+    A3: [297, 420],
+    A4: [210, 297],
+    A5: [148, 210],
+    Letter: [215.9, 279.4],
+    Legal: [215.9, 355.6]
+  };
+  if (size !== "custom" && !Object.hasOwn(paperSizes, size)) {
+    throw new TemplateError("paper.size must be A3, A4, A5, Letter, Legal, or custom.");
+  }
+  const orientation = paper.orientation ?? "portrait";
+  if (orientation !== "portrait" && orientation !== "landscape") {
+    throw new TemplateError("paper.orientation must be portrait or landscape.");
+  }
+  let [paperWidth, paperHeight] = size === "custom"
+    ? [positive(paper.width, "paper.width"), positive(paper.height, "paper.height")]
+    : paperSizes[size];
+  if (orientation === "landscape") {
+    [paperWidth, paperHeight] = [paperHeight, paperWidth];
+  }
+  return [paperWidth, paperHeight];
+}
+
 function validateTemplateObject(value: unknown): LabelTemplate {
   if (!isObject(value)) throw new TemplateError("Template must be a YAML mapping.");
   const paper = value.paper;
   if (paper !== undefined) {
     if (!isObject(paper)) throw new TemplateError("paper must be a mapping.");
+    if (paper.margin !== undefined) insets(paper.margin, "paper.margin");
     if (
       paper.size !== undefined &&
       !["A3", "A4", "A5", "Letter", "Legal", "custom"].includes(String(paper.size))
@@ -145,7 +199,10 @@ function validateTemplateObject(value: unknown): LabelTemplate {
   const rows = positiveInteger(rawLabels.rows, "labels.rows");
   const gapX = optionalNonNegative(rawLabels.gapX, "labels.gapX");
   const gapY = optionalNonNegative(rawLabels.gapY, "labels.gapY");
-  const margin = insets(rawLabels.margin, "labels.margin");
+  if (isObject(paper) && paper.margin !== undefined && rawLabels.margin !== undefined) {
+    throw new TemplateError("Specify paper.margin or legacy labels.margin, not both.");
+  }
+  const margin = rawLabels.margin === undefined ? undefined : insets(rawLabels.margin, "labels.margin");
   const safety = insets(rawLabels.safety, "labels.safety");
   if (!Array.isArray(value.fields) || value.fields.length === 0) {
     throw new TemplateError("fields must be a non-empty list.");
