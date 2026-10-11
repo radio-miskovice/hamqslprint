@@ -19,5 +19,6 @@ export type {
   TemplateInput,
   TemplateItem,
   TemplateLayout,
+  TemplateMeasurement,
   TemplateProblem
 } from "./types";

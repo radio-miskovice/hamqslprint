@@ -226,6 +226,12 @@ function validateItem(value: unknown, index: number): TemplateItem {
   if (value.font !== undefined && typeof value.font !== "string") {
     throw new TemplateError(`fields[${index}].font must be a string.`);
   }
+  if ("x" in value || "xFrom" in value) {
+    throw new TemplateError(`fields[${index}]: replace x and xFrom with left or right.`);
+  }
+  if ((value.left !== undefined) === (value.right !== undefined)) {
+    throw new TemplateError(`fields[${index}] must define exactly one of left or right.`);
+  }
   if (
     value.align !== undefined &&
     value.align !== "left" &&
@@ -236,7 +242,9 @@ function validateItem(value: unknown, index: number): TemplateItem {
   }
   return {
     ...(hasField ? { field: (value.field as string).trim().toUpperCase() } : { text: value.text as string }),
-    x: nonNegative(value.x, `fields[${index}].x`),
+    ...(value.left !== undefined
+      ? { left: nonNegative(value.left, `fields[${index}].left`) }
+      : { right: nonNegative(value.right, `fields[${index}].right`) }),
     y: nonNegative(value.y, `fields[${index}].y`),
     width: positive(value.width, `fields[${index}].width`),
     height: positive(value.height, `fields[${index}].height`),

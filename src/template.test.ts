@@ -8,7 +8,7 @@ import type { LabelTemplate } from "./types";
 function template(): LabelTemplate {
   return {
     labels: { width: 65, height: 34, columns: 3, rows: 8 },
-    fields: [{ text: "73", x: 2, y: 2, width: 40, height: 6, fontSize: 12 }]
+    fields: [{ text: "73", left: 2, y: 2, width: 40, height: 6, fontSize: 12 }]
   };
 }
 

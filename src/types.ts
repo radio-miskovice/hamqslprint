@@ -38,17 +38,16 @@ export interface LabelLayout {
   safety?: Partial<Insets>;
 }
 
-export interface TemplateItem {
+export type TemplateItem = {
   field?: string;
   text?: string;
-  x: number;
   y: number;
   width: number;
   height: number;
   fontSize: number;
   font?: string;
   align?: "left" | "center" | "right";
-}
+} & ({ left: number; right?: never } | { right: number; left?: never });
 
 export interface LabelTemplate {
   paper?: PaperTemplate;
@@ -90,4 +89,14 @@ export interface TemplateProblem {
 export interface TemplateCheckResult {
   ok: boolean;
   errors: TemplateProblem[];
+  measurements: TemplateMeasurement[];
 }
+
+export type TemplateMeasurement = {
+  elementIndex: number;
+  field?: string;
+  text?: string;
+} & (
+  | { measurable: true; maxWidth: number; maxHeight: number }
+  | { measurable: false; reason: "unavailable-font" | "unsupported-character" | "no-records" }
+);

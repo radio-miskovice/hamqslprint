@@ -13,7 +13,8 @@ import type {
   TemplateCheckResult,
   TemplateInput,
   TemplateProblem,
-  TemplateItem
+  TemplateItem,
+  TemplateMeasurement
 } from "./types";
 import { parseLog } from "./logs";
 
@@ -56,7 +57,8 @@ export async function checkTemplate(
     if (error instanceof TemplateError) {
       return {
         ok: false,
-        errors: [{ code: "invalid-template", message: error.message }]
+        errors: [{ code: "invalid-template", message: error.message }],
+        measurements: []
       };
     }
     throw error;
@@ -64,10 +66,21 @@ export async function checkTemplate(
 
   const { records } = parseLog(log, options.format);
   if (records.length === 0) {
-    return { ok: false, errors: [{ code: "no-records", message: "Log contains no contact records." }] };
+    return {
+      ok: false,
+      errors: [{ code: "no-records", message: "Log contains no contact records." }],
+      measurements: layout.fields.map((item, elementIndex) => ({
+        elementIndex,
+        ...(item.field === undefined ? { text: item.text } : { field: item.field }),
+        measurable: false,
+        reason: "no-records"
+      }))
+    };
   }
   const errors: TemplateProblem[] = [];
+  const measurements: TemplateMeasurement[] = [];
   const checkedFonts = new Map<string, PDFFont | undefined>();
+  const characterSets = new Map<string, Set<number>>();
 
   for (const [itemIndex, item] of layout.fields.entries()) {
     const name = item.field ?? `constant ${itemIndex + 1}`;
@@ -75,10 +88,11 @@ export async function checkTemplate(
     const minY = layout.labels.safety.top;
     const maxX = layout.labels.width - layout.labels.safety.right;
     const maxY = layout.labels.height - layout.labels.safety.bottom;
+    const boxX = fieldBoxX(item, layout.labels.width);
     if (
-      item.x < minX ||
+      boxX < minX ||
       item.y < minY ||
-      item.x + item.width > maxX ||
+      boxX + item.width > maxX ||
       item.y + item.height > maxY
     ) {
       errors.push({
@@ -86,8 +100,14 @@ export async function checkTemplate(
         field: name,
         message: `${name} field box exceeds the label's safety margins.`
       });
-      continue;
     }
+    const identity = {
+      elementIndex: itemIndex,
+      ...(item.field === undefined ? { text: item.text } : { field: item.field })
+    };
+    let maxWidth = 0;
+    let maxHeight = 0;
+    let failure: "unavailable-font" | "unsupported-character" | undefined;
     for (const resolved of resolveItem(item, records, itemIndex)) {
       const fontName = resolved.item.font ?? "Helvetica";
       if (!checkedFonts.has(fontName)) {
@@ -95,6 +115,7 @@ export async function checkTemplate(
       }
       const font = checkedFonts.get(fontName);
       if (!font) {
+        failure = "unavailable-font";
         errors.push({
           code: "invalid-template",
           field: name,
@@ -102,9 +123,12 @@ export async function checkTemplate(
         });
         break;
       }
-      try {
-        font.encodeText(resolved.text);
-      } catch {
+      if (!characterSets.has(fontName)) {
+        characterSets.set(fontName, new Set(font.getCharacterSet()));
+      }
+      const characterSet = characterSets.get(fontName)!;
+      if ([...resolved.text].some((character) => !characterSet.has(character.codePointAt(0)!))) {
+        failure = "unsupported-character";
         errors.push({
           code: "unsupported-character",
           field: name,
@@ -115,6 +139,8 @@ export async function checkTemplate(
       }
       const width = font.widthOfTextAtSize(resolved.text, item.fontSize);
       const height = font.heightAtSize(item.fontSize, { descender: true });
+      maxWidth = Math.max(maxWidth, width / MILLIMETRES_TO_POINTS);
+      maxHeight = Math.max(maxHeight, height / MILLIMETRES_TO_POINTS);
       if (
         width > item.width * MILLIMETRES_TO_POINTS + 1e-6 ||
         height > item.height * MILLIMETRES_TO_POINTS + 1e-6
@@ -127,8 +153,11 @@ export async function checkTemplate(
         });
       }
     }
+    measurements.push(failure
+      ? { ...identity, measurable: false, reason: failure }
+      : { ...identity, measurable: true, maxWidth, maxHeight });
   }
-  return { ok: errors.length === 0, errors };
+  return { ok: errors.length === 0, errors, measurements };
 }
 
 export async function generatePdf(
@@ -140,12 +169,7 @@ export async function generatePdf(
   const template = parseTemplate(templateInput);
   const layout = normalizeTemplate(template);
   const { records } = parseLog(log, options.format);
-  const check = await checkTemplate(log, template, options);
-  if (!check.ok) {
-    throw new TemplateError(
-      `Template check failed:\n${check.errors.map((error) => `- ${error.message}`).join("\n")}`
-    );
-  }
+  if (records.length === 0) throw new TemplateError("Log contains no contact records.");
 
   const document = await PDFDocument.create();
   document.registerFontkit(fontkit);
@@ -153,9 +177,14 @@ export async function generatePdf(
   const getFont = async (name = "Helvetica"): Promise<PDFFont> => {
     const cached = fonts.get(name);
     if (cached) return cached;
-    const font = options.fonts?.[name]
-      ? await document.embedFont(options.fonts[name])
-      : await document.embedFont(standardFonts[name.toLowerCase()] ?? "");
+    const custom = options.fonts?.[name];
+    const standard = standardFonts[name.toLowerCase()];
+    if (!custom && !standard) {
+      throw new TemplateError(
+        `Font "${name}" is not a standard PDF font and no font data was provided.`
+      );
+    }
+    const font = await document.embedFont(custom ?? standard);
     fonts.set(name, font);
     return font;
   };
@@ -192,7 +221,7 @@ export async function generatePdf(
         const baselineFromBottom =
           (boxHeight - textHeight) / 2 + textHeight - ascentHeight;
         page.drawText(text, {
-          x: labelX + item.x * MILLIMETRES_TO_POINTS + xOffset,
+          x: labelX + fieldBoxX(item, labels.width) * MILLIMETRES_TO_POINTS + xOffset,
           y:
             layout.paperHeight * MILLIMETRES_TO_POINTS -
             labelTop -
@@ -210,6 +239,10 @@ export async function generatePdf(
   if (target === "none") return pdfBytes;
   const fs = await import("node:fs/promises");
   await fs.writeFile(target, pdfBytes);
+}
+
+function fieldBoxX(item: TemplateItem, labelWidth: number): number {
+  return item.left !== undefined ? item.left : labelWidth - item.right - item.width;
 }
 
 function resolveItem(

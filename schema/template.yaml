@@ -103,7 +103,19 @@ $defs:
         $ref: "#/$defs/nonNegativeDimension"
   item:
     type: object
-    required: [x, y, width, height, fontSize]
+    required: [y, width, height, fontSize]
+    allOf:
+      - oneOf:
+          - required: [left]
+            not:
+              required: [right]
+          - required: [right]
+            not:
+              required: [left]
+    not:
+      anyOf:
+        - required: [x]
+        - required: [xFrom]
     oneOf:
       - required: [field]
         not:
@@ -122,9 +134,17 @@ $defs:
       text:
         type: string
         description: Literal constant text; no placeholder substitution.
-      x:
+      left:
         $ref: "#/$defs/nonNegativeDimension"
-        description: Left edge of the box relative to the sticker's left edge.
+        description: >-
+          Distance from the label's left boundary to the box's left edge,
+          in millimetres. Specify exactly one of left or right.
+      right:
+        $ref: "#/$defs/nonNegativeDimension"
+        description: >-
+          Distance inward from the label's right boundary to the box's right
+          edge, in millimetres. Not relative to the printable area.
+          Independent of text alignment. Specify exactly one of left or right.
       y:
         $ref: "#/$defs/nonNegativeDimension"
         description: Top edge of the box relative to the sticker's top edge.

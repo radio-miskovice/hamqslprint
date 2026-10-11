@@ -37,7 +37,8 @@ and content-dependent checks still require `checkTemplate`. Schema defaults
 are documentation annotations, not automatic value insertion.
 
 All measurements are in millimetres; font sizes are in PDF points. Label field
-coordinates are measured from the label's top-left corner. The paper defaults
+coordinates are measured from the label boundary, not the printable area's
+boundary. Specify exactly one of `left` or `right`; `y` is always from the top. The paper defaults
 to A4 portrait, and unspecified gaps and margins default to zero.
 
 ```yaml
@@ -56,7 +57,7 @@ labels:
   safety: { top: 2, right: 2, bottom: 2, left: 2 }
 fields:
   - field: CALL # ADIF field name; one label is produced per log record
-    x: 2
+    left: 2 # or right: 2; never both
     y: 2
     width: 50
     height: 7
@@ -64,7 +65,7 @@ fields:
     fontSize: 14
     align: left # left, center, or right
   - text: "Thanks for the QSO!" # constant text
-    x: 2
+    left: 2
     y: 12
     width: 50
     height: 5
@@ -76,6 +77,14 @@ side of the oriented page. Each omitted side defaults to zero, so marginless
 paper needs no margin object. Margins affect grid placement and available
 paper space. `labels.margin` remains supported as a deprecated alias; supplying
 both is an error. Sticker printable-area insets remain in `labels.safety`.
+
+`left` measures the distance from the label's left boundary to the box's left
+edge. `right` measures inward from the label's right boundary to the box's
+right edge. For example, on a 70 mm label, `right: 2` and `width: 20` place
+the box's left edge at 48 mm. The previous `x` and `xFrom` attributes are no
+longer accepted: replace `x` with `left`, or with `right` when `xFrom` was right.
+Safety margins constrain that box but do not shift its coordinate origin.
+`align` independently controls text alignment inside the box.
 
 ### Creating a centered layout
 
@@ -95,7 +104,7 @@ const partial = createTemplateLayout(
 const template = {
   ...partial,
   fields: [
-    { field: "CALL", x: 2, y: 2, width: 50, height: 7, fontSize: 14 }
+    { field: "CALL", left: 2, y: 2, width: 50, height: 7, fontSize: 14 }
   ]
 };
 ```
@@ -111,6 +120,38 @@ The host can add fields and sticker safety margins, then serialize the object
 as YAML or pass it directly to the template APIs.
 
 ### Template content validation
+
+`checkTemplate` returns `{ ok, errors, measurements }`. Measurements are ordered
+by the template's `fields` array and use zero-based `elementIndex` values:
+
+```ts
+{
+  elementIndex: 0,
+  field: "CALL",
+  measurable: true,
+  maxWidth: 24.8,
+  maxHeight: 4.6
+}
+```
+
+Dimensions are in millimetres. Field widths are the maximum across all contacts;
+constants (identified by `text` rather than `field`) are measured once. Height
+uses the font's single-line metrics including descenders, not exact visible
+character bounds. Measurements are returned even for overflowing elements or
+boxes outside sticker safety margins. Missing field values have zero width.
+
+If any value cannot be rendered, that element has `measurable: false` and
+`reason: "unsupported-character"` instead of dimensions. Unavailable fonts use
+`reason: "unavailable-font"`. Empty logs mark elements with `reason: "no-records"`;
+invalid template structure or grid geometry returns an empty measurements array.
+Font-data loading errors still reject the API call.
+
+`generatePdf` does not run `checkTemplate` automatically. Call it explicitly
+when you want text-fit, sticker safety-area, and font-coverage diagnostics
+before rendering. Otherwise, text is drawn even if it overflows its box or
+sticker safety area; it is not clipped or resized. Template structure and
+paper/grid geometry are still validated, and empty logs or rendering failures
+(such as unavailable fonts or unsupported characters) still raise errors.
 
 Field box positions and dimensions must stay within the label's safety margins.
 The checker verifies every contact value fits both its box and selected font's

@@ -31,13 +31,13 @@ labels:
   safety: { top: 2, left: 2, right: 2, bottom: 2 }
 fields:
   - field: CALL
-    x: 2
+    left: 2
     y: 2
     width: 40
     height: 6
     fontSize: 12
   - text: "73 de [CALL]"
-    x: 2
+    left: 2
     y: 12
     width: 40
     height: 5
@@ -196,11 +196,28 @@ describe("template checking and PDF generation", () => {
   it("reports content outside the printable safety area and text overflow", async () => {
     const tooSmall = template
       .replace("width: 40", "width: 2")
-      .replace('  - text: "73 de [CALL]"\n    x: 2', '  - text: "73 de [CALL]"\n    x: 1');
+      .replace('  - text: "73 de [CALL]"\n    left: 2', '  - text: "73 de [CALL]"\n    left: 1');
     const result = await checkTemplate(adif, tooSmall);
     expect(result.ok).toBe(false);
     expect(result.errors.map(({ code }) => code)).toContain("outside-printable-area");
     expect(result.errors.map(({ code }) => code)).toContain("text-does-not-fit");
+  });
+
+  it("generates PDF without enforcing text fit or sticker safety margins", async () => {
+    const overflowing = template
+      .replace("width: 40", "width: 2")
+      .replace('  - text: "73 de [CALL]"\n    left: 2', '  - text: "73 de [CALL]"\n    left: 1');
+    expect((await checkTemplate(adif, overflowing)).ok).toBe(false);
+    const bytes = await generatePdf(adif, overflowing);
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(new TextDecoder().decode(bytes!.subarray(0, 5))).toBe("%PDF-");
+  });
+
+  it("still rejects invalid structures, empty logs, and unavailable fonts", async () => {
+    await expect(generatePdf(adif, "labels: {}")).rejects.toThrow("labels.width");
+    await expect(generatePdf("<EOH>", template)).rejects.toThrow("no contact records");
+    const unknownFont = template.replace("fontSize: 12", "fontSize: 12\n    font: MissingFont");
+    await expect(generatePdf(adif, unknownFont)).rejects.toThrow('Font "MissingFont"');
   });
 
   it("reports characters unsupported by a selected standard font", async () => {
@@ -208,7 +225,7 @@ describe("template checking and PDF generation", () => {
     const emojiTemplate = `
 labels: { width: 70, height: 36, columns: 1, rows: 1 }
 fields:
-  - { field: NAME, x: 0, y: 0, width: 50, height: 8, fontSize: 12 }
+  - { field: NAME, left: 0, y: 0, width: 50, height: 8, fontSize: 12 }
 `;
     await expect(checkTemplate(emojiAdif, emojiTemplate)).resolves.toMatchObject({
       ok: false,
