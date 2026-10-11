@@ -1,6 +1,6 @@
 {
   "name": "hamqslprint",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Generate QSL label PDFs from amateur radio log files and YAML templates",
   "license": "MIT",
   "type": "module",
