@@ -75,8 +75,23 @@ label sheet.
 Cabrillo and EDI QSO data are exposed using ADIF-style field names where a
 corresponding value exists. Cabrillo QSO columns follow the standard frequency,
 mode, date, time, sent call/report/exchange, received call/report/exchange
-ordering; frequencies above 1000 are converted from kHz to ADIF MHz. EDI records use the common REG1TEST QSO record order, including
-date, time, call, mode, reports, serials, locator, and frequency.
+ordering; frequencies above 1000 are converted from kHz to ADIF MHz. EDI records
+use the REG1TEST QSO record order for date, time, call, mode, reports, serials,
+and contacted station locator.
+
+EDI header values are copied to every contact:
+
+| EDI header | ADIF field | Example |
+| --- | --- | --- |
+| `PCall` | `STATION_CALLSIGN` | `OK1KEO/P` |
+| `PWWLo` | `MY_GRIDSQUARE` | `JN79NU` |
+| `PBand` | `BAND` | `145 MHz` becomes `2m`; `435 MHz` becomes `70cm` |
+
+Missing or blank headers are omitted. Bands accept MHz or GHz and are mapped
+to ADIF VHF/UHF/microwave bands from 6m through 1mm. Unrecognized bands raise
+a parsing error. EDI does not supply the actual QSO frequency, so `FREQ` is
+omitted rather than inferred from the band header. Frequencies provided by
+ADIF and Cabrillo logs remain available.
 
 The PDF returned for target `"none"` works in browser and Node applications.
 File-path output requires Node.js.

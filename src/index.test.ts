@@ -119,11 +119,11 @@ describe("log parsing", () => {
       QSO_DATE: "20220703",
       TIME_ON: "0959",
       GRIDSQUARE: "JO30DO",
-      FREQ: "144"
+      BAND: "2m"
     });
     expect(selectFields(edi)).toEqual([
+      "BAND",
       "CALL",
-      "FREQ",
       "GRIDSQUARE",
       "MODE",
       "QSO_DATE",
@@ -133,6 +133,53 @@ describe("log parsing", () => {
       "STX_STRING",
       "TIME_ON"
     ]);
+  });
+
+  it.each([
+    ["50 MHz", "6m"],
+    ["144 MHz", "2m"],
+    ["145 MHz", "2m"],
+    ["435 MHz", "70cm"],
+    ["1.3 GHz", "23cm"],
+    ["10 GHz", "3cm"]
+  ])("copies EDI station headers and %s band into every contact", (band, expectedBand) => {
+    const edi = [
+      "[REG1TEST;1]",
+      "PCall=OK1KEO/P",
+      "PWWLo=JN79NU",
+      `PBand=${band}`,
+      "[QSORecords;2]",
+      "220703;0959;DL7ATR;1;59;001;59;102;;JO30DO;91;;N;N;",
+      "220703;1001;DL0VR;1;59;002;59;086;;JO31MH;30;;N;;"
+    ].join("\r\n");
+    const records = parseLog(new TextEncoder().encode(edi)).records;
+    expect(records).toHaveLength(2);
+    for (const record of records) {
+      expect(record).toMatchObject({
+        STATION_CALLSIGN: "OK1KEO/P",
+        MY_GRIDSQUARE: "JN79NU",
+        BAND: expectedBand
+      });
+      expect(record).not.toHaveProperty("FREQ");
+    }
+    expect(selectFields(edi)).toEqual([
+      "BAND", "CALL", "GRIDSQUARE", "MODE", "MY_GRIDSQUARE",
+      "QSO_DATE", "RST_RCVD", "RST_SENT", "SRX_STRING", "STATION_CALLSIGN",
+      "STX_STRING", "TIME_ON"
+    ]);
+  });
+
+  it("does not invent absent EDI station headers", () => {
+    const edi = "[REG1TEST;1]\nPCall=\nPWWLo=\nPBand=\n[QSORecords;1]\n220703;0959;DL7ATR;1;59;001;59;102;;JO30DO;";
+    const record = parseLog(edi).records[0];
+    expect(record).not.toHaveProperty("STATION_CALLSIGN");
+    expect(record).not.toHaveProperty("MY_GRIDSQUARE");
+    expect(record).not.toHaveProperty("BAND");
+    expect(record).not.toHaveProperty("FREQ");
+  });
+
+  it.each(["unknown", "999 MHz"])("reports an unsupported EDI band %s", (band) => {
+    expect(() => parseLog(`[REG1TEST;1]\nPBand=${band}\n[QSORecords;0]`)).toThrow(/EDI PBand/);
   });
 
   it("allows callers to supply a format when detection is ambiguous", () => {

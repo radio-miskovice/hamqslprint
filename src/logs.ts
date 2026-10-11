@@ -113,8 +113,25 @@ function parseCabrillo(text: string): LogRecord[] {
 
 function parseEdi(text: string): LogRecord[] {
   const records: LogRecord[] = [];
-  const band = /^\s*PBand=(.+?)\s*$/im.exec(text)?.[1];
-  const frequency = band ? /^(\d+(?:\.\d+)?)\s*MHz$/i.exec(band)?.[1] : undefined;
+  const header = text.split(/^\s*\[QSORecords(?:;|\])/im)[0];
+  const headerFields: LogRecord = {};
+  for (const [key, field] of [
+    ["PCall", "STATION_CALLSIGN"],
+    ["PWWLo", "MY_GRIDSQUARE"]
+  ]) {
+    const value = new RegExp(`^[ \\t]*${key}[ \\t]*=[ \\t]*([^\\r\\n]*)`, "im")
+      .exec(header)?.[1].trim();
+    if (value) headerFields[field] = value;
+  }
+  const band = /^[ \t]*PBand[ \t]*=[ \t]*([^\r\n]*)/im.exec(header)?.[1].trim();
+  if (band) {
+    const frequency = /^(\d+(?:\.\d+)?)\s*(MHz|GHz)$/i.exec(band);
+    if (!frequency) throw new Error(`Unsupported EDI PBand value: "${band}". Expected MHz or GHz.`);
+    const mhz = Number(frequency[1]) * (frequency[2].toLowerCase() === "ghz" ? 1000 : 1);
+    const adifBand = ediBand(mhz);
+    if (!adifBand) throw new Error(`EDI PBand "${band}" does not correspond to a supported ADIF band.`);
+    headerFields.BAND = adifBand;
+  }
   let readingQsos = false;
   for (const [lineIndex, rawLine] of text.split(/\r?\n/).entries()) {
     const line = rawLine.trim();
@@ -130,6 +147,7 @@ function parseEdi(text: string): LogRecord[] {
       throw new Error(`Malformed EDI QSO record on line ${lineIndex + 1}.`);
     }
     const record: LogRecord = {
+      ...headerFields,
       QSO_DATE: normalizeDate(columns[0]),
       TIME_ON: normalizeTime(columns[1]),
       CALL: columns[2],
@@ -140,10 +158,32 @@ function parseEdi(text: string): LogRecord[] {
       GRIDSQUARE: columns[9]
     };
     if (columns[3]) record.MODE = ediMode(columns[3]);
-    if (frequency) record.FREQ = frequency;
     records.push(record);
   }
   return records;
+}
+
+function ediBand(mhz: number): string | undefined {
+  const bands: [number, number, string][] = [
+    [50, 54, "6m"],
+    [70, 71, "4m"],
+    [144, 148, "2m"],
+    [222, 225, "1.25m"],
+    [420, 450, "70cm"],
+    [902, 928, "33cm"],
+    [1240, 1300, "23cm"],
+    [2300, 2450, "13cm"],
+    [3300, 3500, "9cm"],
+    [5650, 5925, "6cm"],
+    [10000, 10500, "3cm"],
+    [24000, 24250, "1.25cm"],
+    [47000, 47200, "6mm"],
+    [75500, 81000, "4mm"],
+    [119980, 123000, "2.5mm"],
+    [134000, 149000, "2mm"],
+    [241000, 250000, "1mm"]
+  ];
+  return bands.find(([min, max]) => mhz >= min && mhz <= max)?.[2];
 }
 
 function findByte(bytes: Uint8Array, value: number, from: number): number {
